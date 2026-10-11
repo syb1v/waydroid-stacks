@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "waydroid-stacks"
-version = "0.1.0"
-description = "BlueStacks-подобный интерфейс для Waydroid: библиотека приложений, встроенный игровой движок, кеймаппер"
+dynamic = ["version"]
+description = "BlueStacks-подобная оболочка для Waydroid: библиотека приложений, встроенный игровой режим, кеймаппер"
 readme = "README.md"
 license = {text = "GPL-3.0-or-later"}
 authors = [{name = "syb1v"}]
@@ -13,6 +13,9 @@ requires-python = ">=3.10"
 dependencies = [
     "pyaxmlparser>=0.3.28",
 ]
+
+[tool.setuptools.dynamic]
+version = {attr = "waydroid_stacks.__version__"}
 
 [project.scripts]
 waydroid-stacks = "waydroid_stacks.__main__:main"
