@@ -32,6 +32,8 @@ class Widget:
     radius: float = 0.12          # радиус джойстика (доля от min(w,h))
     # aim
     sensitivity: float = 1.0
+    smoothing: float = 0.0       # 0..0.9 сглаживание дельт (EMA)
+    inertia: float = 0.0         # 0..0.9 инерция после остановки мыши
     # swipe
     dx: float = 0.0               # нормализованное смещение свайпа
     dy: float = 0.0

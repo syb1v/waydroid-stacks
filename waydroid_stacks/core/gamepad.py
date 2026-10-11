@@ -37,6 +37,7 @@ class InputMapper:
         self._pressed: set[str] = set()            # активные клавиши
         self._dpad_state: dict[int, set[str]] = {} # id(widget) -> направления
         self._aim: Optional[dict] = None           # активный aim-виджет
+        self._aim_vel = (0.0, 0.0)                 # сглаженная скорость обзора
         self._last_tick = 0.0
         self.enabled = True
 
@@ -144,12 +145,27 @@ class InputMapper:
         if self._aim:
             widget: Widget = self._aim["widget"]
             sens = max(0.05, widget.sensitivity)
-            self._aim["x"] += dx * sens * 3.0
-            self._aim["y"] += dy * sens * 3.0
+            smooth = max(0.0, min(0.9, widget.smoothing))
+            # экспоненциальное сглаживание дельт: меньше дрожания руками
+            vx = self._aim_vel[0] * smooth + dx * (1.0 - smooth)
+            vy = self._aim_vel[1] * smooth + dy * (1.0 - smooth)
+            self._aim_vel = (vx, vy)
+            self._aim["x"] += vx * sens * 3.0
+            self._aim["y"] += vy * sens * 3.0
             self._aim["x"] = min(max(0.0, self._aim["x"]), self.device_w - 1)
             self._aim["y"] = min(max(0.0, self._aim["y"]), self.device_h - 1)
             self.session.touch(ACTION_MOVE, int(self._aim["x"]), int(self._aim["y"]),
                                self._aim["pid"])
+
+    @property
+    def aim_active(self) -> bool:
+        return self._aim is not None
+
+    @property
+    def aim_sensitivity(self) -> float:
+        if not self._aim:
+            return 1.0
+        return max(0.05, self._aim["widget"].sensitivity)
 
     def scroll(self, x_px: int, y_px: int, h: float, v: float) -> None:
         if self.enabled:
@@ -169,6 +185,10 @@ class InputMapper:
             if widget.type == W_DPAD and id(widget) in self._dpad_state:
                 if self._dpad_state[id(widget)]:
                     self._update_dpad(widget)
+
+        # инерция обзора: после остановки мыши палец «доезжает» с затуханием
+        if self._aim and self._aim_vel != (0.0, 0.0):
+            self._tick_aim_inertia()
 
     def reset(self) -> None:
         """Отпускает все активные касания."""
@@ -230,6 +250,28 @@ class InputMapper:
             self.session.touch(ACTION_UP, int(self._aim["x"]), int(self._aim["y"]),
                                self._aim["pid"])
             self._aim = None
+            self._aim_vel = (0.0, 0.0)
+
+    def _tick_aim_inertia(self) -> None:
+        widget: Widget = self._aim["widget"]
+        inertia = max(0.0, min(0.9, widget.inertia))
+        if inertia <= 0.0:
+            self._aim_vel = (0.0, 0.0)
+            return
+        sens = max(0.05, widget.sensitivity)
+        self._aim["x"] += self._aim_vel[0] * sens * 3.0
+        self._aim["y"] += self._aim_vel[1] * sens * 3.0
+        self._aim["x"] = min(max(0.0, self._aim["x"]), self.device_w - 1)
+        self._aim["y"] = min(max(0.0, self._aim["y"]), self.device_h - 1)
+        self.session.touch(ACTION_MOVE, int(self._aim["x"]), int(self._aim["y"]),
+                           self._aim["pid"])
+        # затухание скорости; ниже порога — полная остановка
+        vx = self._aim_vel[0] * inertia
+        vy = self._aim_vel[1] * inertia
+        if abs(vx) < 0.05 and abs(vy) < 0.05:
+            self._aim_vel = (0.0, 0.0)
+        else:
+            self._aim_vel = (vx, vy)
 
     def _do_swipe(self, widget: Widget) -> None:
         pid = self._pid()

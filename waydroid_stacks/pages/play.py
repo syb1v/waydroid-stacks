@@ -17,6 +17,7 @@ from ..core.gamepad import InputMapper  # noqa: E402
 from ..core.gamepad_device import GamepadManager, HAS_EVDEV  # noqa: E402
 from ..core.keymap import Profile  # noqa: E402
 from ..core.nativeinput import WaydroidNativeInput  # noqa: E402
+from ..core.pointerlock import PointerCapture  # noqa: E402
 from ..core.scrcpy import ScrcpySession, ScrcpyError  # noqa: E402
 from ..core.video import VideoStream  # noqa: E402
 
@@ -40,9 +41,10 @@ class PlayWindow(Adw.Window):
         self.session: ScrcpySession | None = None
         self.native_input: WaydroidNativeInput | None = None
         self.mapper: InputMapper | None = None
+        self.pointer_capture = PointerCapture()
         self.video = VideoStream()
         self.gamepad: GamepadManager | None = None
-        self._last_mouse = (0.0, 0.0)
+        self._last_mouse: tuple[float, float] | None = None
         self._ptr_buttons = set()
         self._starting = False
         self._stayon_prev: str | None = None
@@ -390,6 +392,12 @@ class PlayWindow(Adw.Window):
 
     # ----------------------------------------------------------------- mouse
     def _on_motion(self, controller, x, y) -> None:
+        if self.pointer_capture.active:
+            self._last_mouse = None  # дельты берутся из poll_delta
+            return
+        if self._last_mouse is None:
+            self._last_mouse = (x, y)
+            return
         dx = x - self._last_mouse[0]
         dy = y - self._last_mouse[1]
         self._last_mouse = (x, y)
@@ -442,6 +450,8 @@ class PlayWindow(Adw.Window):
         backend.touch(1, int(nx * (iw - 1)), int(ny * (ih - 1)), pid)
 
     def _on_scroll(self, controller, dx, dy) -> bool:
+        if self._last_mouse is None:
+            return True
         nxny = self._normalized(*self._last_mouse)
         if nxny:
             backend = self._input()
@@ -470,11 +480,41 @@ class PlayWindow(Adw.Window):
     def _tick(self) -> bool:
         if self.mapper:
             self.mapper.tick()
+        self._sync_pointer_capture()
         now = time.monotonic()
         if now - self._last_freeze_check >= 5.0:
             self._last_freeze_check = now
             self._check_frozen()
         return True
+
+    def _blank_cursor(self) -> Gdk.Cursor | None:
+        """Прозрачный курсор для режима захвата."""
+        try:
+            import struct
+            data = GLib.Bytes.new(struct.pack("4B", 0, 0, 0, 0))
+            tex = Gdk.MemoryTexture.new(1, 1, Gdk.MemoryFormat.R8G8B8A8, data, 4)
+            return Gdk.Cursor.new_from_texture(tex, 0, 0)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _sync_pointer_capture(self) -> None:
+        """Захват указателя на время обзора (мышь как тачпад): XWarpPointer."""
+        want = bool(self.mapper and self.mapper.enabled and self.mapper.aim_active)
+        if self.pointer_capture.active:
+            if want:
+                dx, dy = self.pointer_capture.poll_delta()
+                if (dx or dy) and self.mapper:
+                    self.mapper.mouse_move(dx, dy)
+                return
+            self.pointer_capture.stop()
+            try:
+                self.video.picture.set_cursor(None)
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        if want and self.pointer_capture.available:
+            if self.pointer_capture.start():
+                self.video.picture.set_cursor(self._blank_cursor())
 
     def _check_frozen(self) -> None:
         """Watchdog: если Android всё же уснул и контейнер заморожен —
@@ -549,6 +589,8 @@ class PlayWindow(Adw.Window):
         if self.gamepad:
             self.gamepad.stop()
             self.gamepad = None
+        if self.pointer_capture:
+            self.pointer_capture.close()
         if self.mapper:
             self.mapper.reset()
         if self.native_input:

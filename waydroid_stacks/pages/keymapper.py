@@ -617,6 +617,18 @@ class KeymapEditorWindow(Adw.Window):
                              lambda s: setattr(widget, "sensitivity", s.get_value()))
                 add_row("Чувствительность", sens)
 
+                smooth = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0.0, 0.9, 0.05)
+                smooth.set_value(widget.smoothing)
+                smooth.connect("value-changed",
+                               lambda s: setattr(widget, "smoothing", s.get_value()))
+                add_row("Сглаживание", smooth)
+
+                inertia = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0.0, 0.9, 0.05)
+                inertia.set_value(widget.inertia)
+                inertia.connect("value-changed",
+                                lambda s: setattr(widget, "inertia", s.get_value()))
+                add_row("Инерция", inertia)
+
             if widget.type == W_SWIPE:
                 dx = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, -0.5, 0.5, 0.01)
                 dx.set_value(widget.dx)
