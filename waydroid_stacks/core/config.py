@@ -23,6 +23,7 @@ SHOT_DIR = CACHE_DIR / "shots"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 BUNDLED_SCRCPY_SERVER = PROJECT_ROOT / "third_party" / "scrcpy-server"
+BUNDLED_IME_APK = PROJECT_ROOT / "third_party" / "wdsime.apk"
 SCRCPY_VERSION = "3.3.1"
 
 DEFAULT_ADB_SERIAL = "192.168.240.112:5555"

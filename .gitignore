@@ -7,3 +7,6 @@ dist/
 *.egg-info/
 *.tar
 frame.ppm
+
+# сборка тихой IME
+ime/build/

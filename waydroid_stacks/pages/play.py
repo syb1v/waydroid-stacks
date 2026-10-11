@@ -15,6 +15,7 @@ from gi.repository import Adw, GLib, Gtk, Gdk  # noqa: E402
 from ..core import config  # noqa: E402
 from ..core.gamepad import InputMapper  # noqa: E402
 from ..core.gamepad_device import GamepadManager, HAS_EVDEV  # noqa: E402
+from ..core.imebridge import ImeBridge  # noqa: E402
 from ..core.keymap import Profile  # noqa: E402
 from ..core.nativeinput import WaydroidNativeInput  # noqa: E402
 from ..core.pointerlock import PointerCapture  # noqa: E402
@@ -24,6 +25,12 @@ from ..core.video import VideoStream  # noqa: E402
 
 class PlayWindow(Adw.Window):
     """Игровое окно: стрим из Android + маппинг клавиатуры/мыши."""
+
+    # спецклавиши для ввода текста (Android keycodes)
+    _TEXT_IME_KEYS = {
+        "backspace": 67, "delete": 112, "return": 66, "enter": 66,
+        "left": 21, "right": 22, "up": 19, "down": 20,
+    }
 
     def __init__(self, parent_window, package: str, keymap: bool = True):
         super().__init__(transient_for=parent_window)
@@ -40,12 +47,16 @@ class PlayWindow(Adw.Window):
 
         self.session: ScrcpySession | None = None
         self.native_input: WaydroidNativeInput | None = None
+        self.ime_bridge: ImeBridge | None = None
         self.mapper: InputMapper | None = None
         self.pointer_capture = PointerCapture()
         self.video = VideoStream()
         self.gamepad: GamepadManager | None = None
         self._last_mouse: tuple[float, float] | None = None
         self._ptr_buttons = set()
+        self._ime_keys_down: set[str] = set()
+        self._ime_active_prev = False
+        self._status_base = ""
         self._starting = False
         self._stayon_prev: str | None = None
         self._last_freeze_check = 0.0
@@ -235,6 +246,16 @@ class PlayWindow(Adw.Window):
                         native.stop()
                 except Exception:  # noqa: BLE001
                     self.native_input = None
+                # тихий IME: ввод текста в поля Android без экранной
+                # клавиатуры (см. core/imebridge.py)
+                try:
+                    bridge = ImeBridge(adb)
+                    if bridge.start():
+                        self.ime_bridge = bridge
+                    else:
+                        bridge.stop()
+                except Exception:  # noqa: BLE001
+                    self.ime_bridge = None
                 self.mapper = InputMapper(self._input(), self.profile)
                 GLib.idle_add(self._on_ready)
             except Exception as exc:  # noqa: BLE001
@@ -249,6 +270,9 @@ class PlayWindow(Adw.Window):
         self.status.set_text("Переподключение...")
         if self.mapper:
             self.mapper.reset()
+        if self.ime_bridge:
+            self.ime_bridge.stop()
+            self.ime_bridge = None
         if self.native_input:
             self.native_input.stop()
             self.native_input = None
@@ -270,6 +294,7 @@ class PlayWindow(Adw.Window):
             status = "Клики мыши — тапы"
         if self.gamepad and self.gamepad.connected:
             status += f" · геймпад: {self.gamepad.connected[0]}"
+        self._status_base = status
         self.status.set_text(status)
         self.parent_window.register_play_window(self.package, self)
         self._start_gamepad()
@@ -336,6 +361,32 @@ class PlayWindow(Adw.Window):
             cr.show_text(text)
 
     # -------------------------------------------------------------- keyboard
+    def _ime_text_active(self) -> bool:
+        return bool(self.ime_bridge and self.ime_bridge.text_active)
+
+    def _ime_key(self, name: str, keyval: int) -> bool:
+        """Напечатать клавишу через тихую IME. True — клавиша обработана."""
+        if not self._ime_text_active() or not self.ime_bridge:
+            return False
+        code = self._TEXT_IME_KEYS.get(name)
+        if code is not None:
+            self.ime_bridge.queue_key(code)
+            return True
+        ch = Gdk.keyval_to_unicode(keyval)
+        if ch and chr(ch).isprintable():
+            self.ime_bridge.queue_text(chr(ch))
+            return True
+        return False
+
+    def _ime_key_handled(self, name: str, keyval: int) -> bool:
+        """Была ли бы клавиша обработана IME (без отправки)."""
+        if not self._ime_text_active():
+            return False
+        if name in self._TEXT_IME_KEYS:
+            return True
+        ch = Gdk.keyval_to_unicode(keyval)
+        return bool(ch and chr(ch).isprintable())
+
     def _on_key_pressed(self, controller, keyval, keycode, state) -> bool:
         name = (Gdk.keyval_name(keyval) or "").lower()
 
@@ -355,6 +406,11 @@ class PlayWindow(Adw.Window):
             self.close()
             return True
 
+        # фокус в поле ввода Android → текст через тихую IME
+        if self._ime_key(name, keyval):
+            self._ime_keys_down.add(name)
+            return True
+
         if self.use_keymap and self.mapper:
             self.mapper.key_press(name)
             return True  # не даём клавишам уходить в Android напрямую
@@ -366,6 +422,9 @@ class PlayWindow(Adw.Window):
 
     def _on_key_released(self, controller, keyval, keycode, state) -> bool:
         name = (Gdk.keyval_name(keyval) or "").lower()
+        if name in self._ime_keys_down:
+            self._ime_keys_down.discard(name)
+            return True
         if self.use_keymap and self.mapper:
             self.mapper.key_release(name)
             return True
@@ -481,6 +540,12 @@ class PlayWindow(Adw.Window):
         if self.mapper:
             self.mapper.tick()
         self._sync_pointer_capture()
+        if self.ime_bridge and self._status_base:
+            active = self._ime_text_active()
+            if active != self._ime_active_prev:
+                self._ime_active_prev = active
+                suffix = " · ввод текста (IME)" if active else ""
+                self.status.set_text(self._status_base + suffix)
         now = time.monotonic()
         if now - self._last_freeze_check >= 5.0:
             self._last_freeze_check = now
@@ -593,6 +658,9 @@ class PlayWindow(Adw.Window):
             self.pointer_capture.close()
         if self.mapper:
             self.mapper.reset()
+        if self.ime_bridge:
+            self.ime_bridge.stop()
+            self.ime_bridge = None
         if self.native_input:
             self.native_input.stop()
             self.native_input = None
