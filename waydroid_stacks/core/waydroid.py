@@ -81,6 +81,34 @@ class Waydroid:
         except OSError:
             pass
 
+    def unfreeze(self) -> bool:
+        """Размораживает контейнер (suspend_action=freeze замораживает его при
+        остановке сессии, из-за чего adb начинает зависать)."""
+        st = self.status()
+        if not st.container_running:
+            return False
+        if st.container.upper() != "FROZEN":
+            return True
+        try:
+            import dbus
+            bus = dbus.SystemBus()
+            obj = bus.get_object("id.waydro.Container", "/ContainerManager")
+            iface = dbus.Interface(obj, "id.waydro.ContainerManager")
+            iface.Unfreeze()
+            for _ in range(10):
+                time.sleep(0.5)
+                if self.status().container.upper() == "RUNNING":
+                    return True
+            return True
+        except Exception:  # noqa: BLE001
+            # fallback: запуск любого app-запроса размораживает контейнер
+            try:
+                subprocess.run([self.binary, "app", "list"],
+                               capture_output=True, timeout=20)
+                return True
+            except (OSError, subprocess.TimeoutExpired):
+                return False
+
     def prop_get(self, key: str) -> str:
         try:
             proc = subprocess.run([self.binary, "prop", "get", key],

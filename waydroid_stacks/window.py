@@ -128,6 +128,7 @@ class MainWindow(Adw.ApplicationWindow):
                 if not st.session_running:
                     GLib.idle_add(self.toast, "Запускаю сессию Waydroid...")
                     self.waydroid.session_start()
+                self.waydroid.unfreeze()
                 self.adb.connect()
                 if not self.adb.wait_boot(90):
                     raise AdbError("Android не загрузился за 90 секунд")

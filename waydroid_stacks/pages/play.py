@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 
 import gi
 
@@ -10,7 +11,9 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, GLib, Gtk, Gdk  # noqa: E402
 
+from ..core import config  # noqa: E402
 from ..core.gamepad import InputMapper  # noqa: E402
+from ..core.gamepad_device import GamepadManager, HAS_EVDEV  # noqa: E402
 from ..core.keymap import Profile  # noqa: E402
 from ..core.scrcpy import ScrcpySession, ScrcpyError  # noqa: E402
 from ..core.video import VideoStream  # noqa: E402
@@ -35,8 +38,10 @@ class PlayWindow(Adw.Window):
         self.session: ScrcpySession | None = None
         self.mapper: InputMapper | None = None
         self.video = VideoStream()
+        self.gamepad: GamepadManager | None = None
         self._last_mouse = (0.0, 0.0)
         self._ptr_buttons = set()
+        self._starting = False
 
         self._build_ui()
         self._start()
@@ -78,6 +83,18 @@ class PlayWindow(Adw.Window):
         self.marker_toggle.set_active(self.use_keymap)
         self.marker_toggle.connect("toggled", lambda *_: self.marker_area.queue_draw())
         self.toolbar.append(self.marker_toggle)
+
+        self.shot_btn = tool_button("camera-photo-symbolic",
+                                    "Скриншот (F8)", self.take_screenshot)
+        self.toolbar.append(self.shot_btn)
+
+        self.record_btn = Gtk.ToggleButton()
+        self.record_btn.set_icon_name("media-record-symbolic")
+        self.record_btn.set_tooltip_text("Запись геймплея (F9)")
+        self.record_btn.add_css_class("flat")
+        self.record_btn.connect("toggled", self._on_record_toggled)
+        self.toolbar.append(self.record_btn)
+
         self.toolbar.append(tool_button("view-fullscreen-symbolic", "Полный экран (F11)",
                                         self._toggle_fullscreen))
         self.toolbar.append(tool_button("window-close-symbolic", "Закрыть стрим",
@@ -92,6 +109,25 @@ class PlayWindow(Adw.Window):
         self.status.set_valign(Gtk.Align.END)
         self.status.set_margin_bottom(12)
         self.overlay.add_overlay(self.status)
+
+        # кнопка переподключения (появляется при ошибке)
+        self.reconnect_btn = Gtk.Button(label="Переподключить")
+        self.reconnect_btn.add_css_class("suggested-action")
+        self.reconnect_btn.set_halign(Gtk.Align.CENTER)
+        self.reconnect_btn.set_valign(Gtk.Align.CENTER)
+        self.reconnect_btn.set_visible(False)
+        self.reconnect_btn.connect("clicked", lambda *_: self._restart_stream())
+        self.overlay.add_overlay(self.reconnect_btn)
+
+        # индикатор записи
+        self.rec_indicator = Gtk.Label(label="● REC")
+        self.rec_indicator.add_css_class("osd")
+        self.rec_indicator.set_halign(Gtk.Align.END)
+        self.rec_indicator.set_valign(Gtk.Align.START)
+        self.rec_indicator.set_margin_top(14)
+        self.rec_indicator.set_margin_end(14)
+        self.rec_indicator.set_visible(False)
+        self.overlay.add_overlay(self.rec_indicator)
 
         # события клавиатуры
         key_ctl = Gtk.EventControllerKey()
@@ -122,22 +158,41 @@ class PlayWindow(Adw.Window):
 
     # ------------------------------------------------------------------ start
     def _start(self) -> None:
+        if self._starting:
+            return
+        self._starting = True
+
         def work():
             import time as _time
             try:
                 adb = self.parent_window.adb
+                self.parent_window.waydroid.unfreeze()
                 adb.connect()
                 if not adb.wait_boot(60):
                     raise ScrcpyError("Android не загружен")
                 parent = self.parent_window
+                # приоритет: настройки профиля игры, затем глобальные
+                # (0 = взять глобальные, -1 = без ограничения)
+                psize = int(self.profile.stream_max_size or 0)
+                if psize < 0:
+                    max_size = 0
+                elif psize > 0:
+                    max_size = psize
+                else:
+                    max_size = int(parent.settings.get("max_size", 0) or 0)
+
+                pfps = int(self.profile.stream_max_fps or 0)
+                if pfps < 0:
+                    max_fps = 0
+                elif pfps > 0:
+                    max_fps = pfps
+                else:
+                    max_fps = int(parent.settings.get("max_fps", 0) or 0)
                 last_exc = None
                 for attempt in range(3):
                     try:
                         self.session = ScrcpySession(
-                            adb,
-                            max_size=int(parent.settings.get("max_size", 0) or 0),
-                            max_fps=int(parent.settings.get("max_fps", 0) or 0),
-                        )
+                            adb, max_size=max_size, max_fps=max_fps)
                         self.session.start(video=True, control=True)
                         last_exc = None
                         break
@@ -154,14 +209,51 @@ class PlayWindow(Adw.Window):
         import threading
         threading.Thread(target=work, daemon=True).start()
 
+    def _restart_stream(self) -> None:
+        """Переподключение стрима одной кнопкой."""
+        self.reconnect_btn.set_visible(False)
+        self.status.set_text("Переподключение...")
+        if self.mapper:
+            self.mapper.reset()
+        if self.session:
+            self.session.stop()
+            self.session = None
+        self.video.stop()
+        self._starting = False
+        self._start()
+
     def _on_ready(self) -> None:
+        self._starting = False
         self.video.attach(self.session)
-        self.status.set_text("Кеймаппинг активен" if self.use_keymap else "Клики мыши — тапы")
+        status = "Кеймаппинг активен" if self.use_keymap else "Клики мыши — тапы"
+        if self.gamepad and self.gamepad.connected:
+            status += f" · геймпад: {self.gamepad.connected[0]}"
+        self.status.set_text(status)
         self.parent_window.register_play_window(self.package, self)
+        self._start_gamepad()
 
     def _on_error(self, message: str) -> None:
+        self._starting = False
         self.status.set_text(f"Ошибка: {message}")
+        self.reconnect_btn.set_visible(True)
         self.parent_window.toast(f"Стрим: {message}")
+
+    # ---------------------------------------------------------------- gamepad
+    def _start_gamepad(self) -> None:
+        if not self.use_keymap or not HAS_EVDEV or self.gamepad:
+            return
+
+        def on_pad_key(name: str, pressed: bool) -> None:
+            if self.mapper:
+                if pressed:
+                    self.mapper.key_press(name)
+                else:
+                    self.mapper.key_release(name)
+
+        self.gamepad = GamepadManager(on_pad_key)
+        self.gamepad.start()
+        if self.gamepad.connected:
+            self.parent_window.toast(f"Геймпад: {self.gamepad.connected[0]}")
 
     # ---------------------------------------------------------------- markers
     def _draw_markers(self, area, cr, width, height) -> None:
@@ -207,6 +299,12 @@ class PlayWindow(Adw.Window):
 
         if name == "f11":
             self._toggle_fullscreen()
+            return True
+        if name == "f8":
+            self.take_screenshot()
+            return True
+        if name == "f9":
+            self.record_btn.set_active(not self.record_btn.get_active())
             return True
         if name == "tab":
             self.marker_toggle.set_active(not self.marker_toggle.get_active())
@@ -321,12 +419,64 @@ class PlayWindow(Adw.Window):
             self.mapper.tick()
         return True
 
+    # ------------------------------------------------------------- capture
+    def take_screenshot(self) -> None:
+        """F8: сохраняет текущий кадр стрима в папку изображений."""
+        if not self.session:
+            self.parent_window.toast("Стрим не запущен")
+            return
+        try:
+            folder = config.pictures_dir() / "Waydroid Stacks"
+            folder.mkdir(parents=True, exist_ok=True)
+            name = f"{self.package.replace('.', '_')}-{datetime.now():%Y%m%d-%H%M%S}.png"
+            target = folder / name
+        except OSError as exc:
+            self.parent_window.toast(f"Скриншот: {exc}")
+            return
+
+        def work():
+            try:
+                self.parent_window.adb.screencap(str(target))
+                GLib.idle_add(self.parent_window.toast, f"Скриншот: {target.name}")
+            except Exception as exc:  # noqa: BLE001
+                GLib.idle_add(self.parent_window.toast, f"Скриншот: {exc}")
+
+        import threading
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_record_toggled(self, btn) -> None:
+        """F9: запись/остановка записи геймплея в MP4."""
+        if btn.get_active():
+            folder = config.videos_dir() / "Waydroid Stacks"
+            try:
+                folder.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                btn.set_active(False)
+                self.parent_window.toast(f"Запись: {exc}")
+                return
+            name = f"{self.package.replace('.', '_')}-{datetime.now():%Y%m%d-%H%M%S}.mp4"
+            target = folder / name
+            if self.video.start_recording(target):
+                self.rec_indicator.set_visible(True)
+                self.parent_window.toast(f"Запись: {name}")
+            else:
+                btn.set_active(False)
+                self.parent_window.toast("Запись недоступна (нет видеопотока)")
+        else:
+            path = self.video.stop_recording()
+            self.rec_indicator.set_visible(False)
+            if path:
+                self.parent_window.toast(f"Запись сохранена: {path.name}")
+
     # ------------------------------------------------------------------ stop
     def close(self) -> None:  # type: ignore[override]
+        if self.gamepad:
+            self.gamepad.stop()
+            self.gamepad = None
         if self.mapper:
             self.mapper.reset()
         if self.session:
             self.session.stop()
-        self.video.stop()
+        self.video.stop(wait=True)
         self.parent_window.unregister_play_window(self.package)
         super().close()

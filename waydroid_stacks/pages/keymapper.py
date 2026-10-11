@@ -54,13 +54,22 @@ class KeymapperPage(Adw.Bin):
         new_btn.set_halign(Gtk.Align.START)
         new_btn.connect("clicked", lambda *_: self._new_profile())
 
+        import_btn = Gtk.Button(label="Импорт .wsk")
+        import_btn.set_halign(Gtk.Align.START)
+        import_btn.set_tooltip_text("Импортировать раскладку из файла .wsk")
+        import_btn.connect("clicked", lambda *_: self._import_wsk())
+
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        btn_row.append(new_btn)
+        btn_row.append(import_btn)
+
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
         scrolled.set_child(self.listbox)
 
         box.append(title)
         box.append(desc)
-        box.append(new_btn)
+        box.append(btn_row)
         box.append(scrolled)
         self.set_child(box)
 
@@ -98,6 +107,12 @@ class KeymapperPage(Adw.Bin):
             play_btn.connect("clicked", lambda _b, p=pkg: self.parent_window.launch_package(
                 p, with_keymap=True))
 
+            export_btn = Gtk.Button.new_from_icon_name("document-save-symbolic")
+            export_btn.add_css_class("flat")
+            export_btn.set_valign(Gtk.Align.CENTER)
+            export_btn.set_tooltip_text("Экспорт раскладки (.wsk)")
+            export_btn.connect("clicked", lambda _b, p=pkg: self._export_wsk(p))
+
             del_btn = Gtk.Button.new_from_icon_name("user-trash-symbolic")
             del_btn.add_css_class("flat")
             del_btn.set_valign(Gtk.Align.CENTER)
@@ -106,8 +121,60 @@ class KeymapperPage(Adw.Bin):
 
             row.add_suffix(edit_btn)
             row.add_suffix(play_btn)
+            row.add_suffix(export_btn)
             row.add_suffix(del_btn)
             self.listbox.append(row)
+
+    # --------------------------------------------------------- export/import
+    def _export_wsk(self, package: str) -> None:
+        dialog = Gtk.FileDialog()
+        dialog.set_title("Экспорт раскладки")
+        dialog.set_initial_name(f"{package}.wsk")
+
+        def on_finish(dlg, result):
+            try:
+                file = dlg.save_finish(result)
+            except GLib.Error:
+                return
+            path = file.get_path()
+            if not path:
+                return
+            try:
+                target = self.profiles.export_wsk(
+                    package, __import__("pathlib").Path(path))
+                self.parent_window.toast(f"Экспортировано: {target.name}")
+            except Exception as exc:  # noqa: BLE001
+                self.parent_window.toast(f"Экспорт: {exc}")
+
+        dialog.save(self.parent_window, None, on_finish)
+
+    def _import_wsk(self) -> None:
+        dialog = Gtk.FileDialog()
+        dialog.set_title("Импорт раскладки (.wsk)")
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        filter_wsk = Gtk.FileFilter()
+        filter_wsk.set_name("Раскладки Waydroid Stacks (*.wsk)")
+        filter_wsk.add_pattern("*.wsk")
+        filters.append(filter_wsk)
+        dialog.set_filters(filters)
+
+        def on_finish(dlg, result):
+            try:
+                file = dlg.open_finish(result)
+            except GLib.Error:
+                return
+            path = file.get_path()
+            if not path:
+                return
+            try:
+                profile = self.profiles.import_wsk(__import__("pathlib").Path(path))
+                self.refresh()
+                self.parent_window.toast(
+                    f"Импортирована раскладка: {profile.package}")
+            except Exception as exc:  # noqa: BLE001
+                self.parent_window.toast(f"Импорт: {exc}")
+
+        dialog.open(self.parent_window, None, on_finish)
 
     def _delete(self, package: str) -> None:
         self.profiles.delete(package)
@@ -199,6 +266,44 @@ class KeymapEditorWindow(Adw.Window):
         clear_btn.add_css_class("destructive-action")
         clear_btn.connect("clicked", lambda *_: self._clear())
         left.append(clear_btn)
+
+        sep2 = Gtk.Separator()
+        left.append(sep2)
+
+        # настройки производительности на игру
+        perf_title = Gtk.Label(label="Стрим этой игры", xalign=0)
+        perf_title.add_css_class("heading")
+        left.append(perf_title)
+
+        size_label = Gtk.Label(label="Разрешение видео", xalign=0)
+        size_label.add_css_class("dim-label")
+        left.append(size_label)
+        self.stream_size_row = Gtk.DropDown.new_from_strings(
+            ["Как в настройках", "720p (960)", "HD (1280)", "Full HD (1920)", "Нативное"])
+        size_values = [0, 960, 1280, 1920, -1]
+        current = self.profile.stream_max_size
+        self.stream_size_row.set_selected(
+            size_values.index(current) if current in size_values else 0)
+        self.stream_size_row.connect(
+            "notify::selected",
+            lambda r, p: setattr(self.profile, "stream_max_size",
+                                 size_values[r.get_selected()]))
+        left.append(self.stream_size_row)
+
+        fps_label = Gtk.Label(label="Лимит FPS", xalign=0)
+        fps_label.add_css_class("dim-label")
+        left.append(fps_label)
+        self.stream_fps_row = Gtk.DropDown.new_from_strings(
+            ["Как в настройках", "30", "60", "120", "Без лимита"])
+        fps_values = [0, 30, 60, 120, -1]
+        current_fps = self.profile.stream_max_fps
+        self.stream_fps_row.set_selected(
+            fps_values.index(current_fps) if current_fps in fps_values else 0)
+        self.stream_fps_row.connect(
+            "notify::selected",
+            lambda r, p: setattr(self.profile, "stream_max_fps",
+                                 fps_values[r.get_selected()]))
+        left.append(self.stream_fps_row)
 
         self.hint = Gtk.Label(
             label="ЛКМ — перетащить виджет.\nПКМ по виджету — свойства/удаление.",

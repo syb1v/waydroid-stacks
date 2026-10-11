@@ -52,15 +52,22 @@ class Widget:
 class Profile:
     package: str
     widgets: list[Widget] = field(default_factory=list)
+    # настройки производительности на игру (0 = взять глобальные)
+    stream_max_size: int = 0
+    stream_max_fps: int = 0
 
     def to_json(self) -> dict:
         return {"version": 1, "package": self.package,
+                "stream_max_size": self.stream_max_size,
+                "stream_max_fps": self.stream_max_fps,
                 "widgets": [w.to_json() for w in self.widgets]}
 
     @staticmethod
     def from_json(data: dict) -> "Profile":
         return Profile(package=data.get("package", ""),
-                       widgets=[Widget.from_json(w) for w in data.get("widgets", [])])
+                       widgets=[Widget.from_json(w) for w in data.get("widgets", [])],
+                       stream_max_size=int(data.get("stream_max_size", 0) or 0),
+                       stream_max_fps=int(data.get("stream_max_fps", 0) or 0))
 
 
 class ProfileStore:
@@ -96,6 +103,32 @@ class ProfileStore:
             self.path_for(package).unlink()
         except OSError:
             pass
+
+    # ------------------------------------------------------ экспорт / импорт
+    def export_wsk(self, package: str, target: Path) -> Path:
+        """Экспортирует профиль в файл .wsk (обмен раскладками)."""
+        profile = self.load(package)
+        payload = profile.to_json()
+        payload["format"] = "waydroid-stacks-keymap"
+        target = Path(target)
+        if target.suffix.lower() != ".wsk":
+            target = target.with_suffix(".wsk")
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=1),
+                          encoding="utf-8")
+        return target
+
+    def import_wsk(self, source: Path, rename_package: Optional[str] = None) -> Profile:
+        """Импортирует профиль из .wsk (или совместимого JSON)."""
+        data = json.loads(Path(source).read_text(encoding="utf-8"))
+        if data.get("format") not in (None, "waydroid-stacks-keymap"):
+            raise ValueError("Неизвестный формат файла раскладки")
+        profile = Profile.from_json(data)
+        if rename_package:
+            profile.package = rename_package
+        if not profile.package:
+            raise ValueError("В файле не указан пакет приложения")
+        self.save(profile)
+        return profile
 
     def list_packages(self) -> list[str]:
         result = []

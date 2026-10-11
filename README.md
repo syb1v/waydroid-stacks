@@ -5,7 +5,7 @@
 экран Android в окне приложения и кеймаппер клавиатуры/мыши — в одном нативном
 GTK4-приложении.
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Version](https://img.shields.io/badge/version-0.2.0-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-green)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 ![GTK4](https://img.shields.io/badge/GTK4-libadwaita-purple)
@@ -88,10 +88,30 @@ cd waydroid-stacks
 | Клавиша | Действие |
 |---|---|
 | `Tab` | показать/скрыть визуальную раскладку |
+| `F8` | скриншот (в «Изображения/Waydroid Stacks») |
+| `F9` | начать/остановить запись геймплея (MP4, «Видео/Waydroid Stacks») |
 | `F11` | полный экран |
 | `Esc` | закрыть игровое окно |
 | мышь | в режиме маппинга — обзор/прицеливание (виджет «Обзор») |
 | ЛКМ/ПКМ | назначаются как клавиши `mouse1`, `mouse2` |
+| геймпад | кнопки и стики как `pad:a`, `pad:up`, `pad:ls_right` и т.д. |
+
+## Геймпады
+
+Подключённый геймпад (XInput/DualShock/DualSense и др.) определяется
+автоматически. В редакторе раскладки назначьте на виджеты клавиши вида:
+
+- кнопки: `pad:a`, `pad:b`, `pad:x`, `pad:y`, `pad:lb`, `pad:rb`,
+  `pad:lt`, `pad:rt`, `pad:start`, `pad:select`, `pad:l3`, `pad:r3`, `pad:guide`
+- крестовина: `pad:up`, `pad:down`, `pad:left`, `pad:right`
+- левый стик: `pad:ls_up`, `pad:ls_down`, `pad:ls_left`, `pad:ls_right`
+- правый стик: `pad:rs_up`, `pad:rs_down`, `pad:rs_left`, `pad:rs_right`
+
+## Обмен раскладками (.wsk)
+
+Профиль кеймаппинга экспортируется в файл `.wsk`
+(«Клавиатура» → значок сохранения рядом с профилем) и импортируется на любой
+другой машине («Клавиатура» → «Импорт .wsk»). Формат — JSON.
 
 ## Версионирование
 

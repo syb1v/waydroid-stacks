@@ -69,3 +69,24 @@ def save_settings(settings: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(settings, f, ensure_ascii=False, indent=2)
     tmp.replace(SETTINGS_FILE)
+
+
+def _xdg_user_dir(name: str, fallback: str) -> Path:
+    import subprocess
+    try:
+        proc = subprocess.run(["xdg-user-dir", name], capture_output=True, timeout=5)
+        if proc.returncode == 0:
+            p = proc.stdout.decode().strip()
+            if p and p != str(Path.home()):
+                return Path(p)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return Path.home() / fallback
+
+
+def pictures_dir() -> Path:
+    return _xdg_user_dir("PICTURES", "Изображения")
+
+
+def videos_dir() -> Path:
+    return _xdg_user_dir("VIDEOS", "Видео")
