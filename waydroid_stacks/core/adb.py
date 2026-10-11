@@ -185,8 +185,13 @@ class Adb:
 
     def screencap(self, local_path: str) -> None:
         data = self.exec_out("screencap -p", timeout=30)
+        # некоторые процессы контейнера пишут предупреждения в stdout,
+        # которые adb может подмешать в поток — обрезаем до сигнатуры PNG
+        magic = data.find(b"\x89PNG")
+        if magic < 0:
+            raise AdbError("screencap: PNG не найден в выводе")
         with open(local_path, "wb") as f:
-            f.write(data)
+            f.write(data[magic:])
 
     def icmp_ok(self) -> bool:
         res = self.shell("ping -c 1 -W 2 8.8.8.8", timeout=15)

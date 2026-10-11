@@ -27,7 +27,10 @@ class InputMapper:
     def __init__(self, session: ScrcpySession, profile: Profile):
         self.session = session
         self.profile = profile
-        self.device_w, self.device_h = session.device_size
+        # координаты виджетов считаются в пространстве ввода бэкенда
+        # (scrcpy — пиксели видео, нативный FIFO — пиксели экрана)
+        size = getattr(session, "input_size", None) or session.device_size
+        self.device_w, self.device_h = size
 
         self._next_pid = 10
         self._pointers: dict[str, _Pointer] = {}   # widget-key -> pointer

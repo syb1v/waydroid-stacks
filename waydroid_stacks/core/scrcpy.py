@@ -148,6 +148,11 @@ class ScrcpySession:
     def video_size(self) -> tuple[int, int]:
         return self._video_size
 
+    @property
+    def input_size(self) -> tuple[int, int]:
+        """Пространство координат для touch/scroll (видео, пока не получено)."""
+        return self._video_size if self._video_size != (0, 0) else self.device_size
+
     # ---------------------------------------------------------------- control
     def touch(self, action: int, x: int, y: int, pointer_id: int,
               pressure: float = 1.0, buttons: int = 0) -> None:

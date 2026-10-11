@@ -24,8 +24,12 @@
 - [ ] **Прямой захват экрана Android без H.264**: zero-copy доступ к
       поверхности через DMA-BUF/screencopy → GTK4 `GdkDmabufTexture`.
       Убирает кодирование/декодирование и лишний буфер.
-- [ ] **Инъекция через uinput без adb**: виртуальное устройство ввода в
-      контейнере вместо control-сокета scrcpy — не нужен scrcpy-server.
+- [x] **Нативная инъекция ввода через evdev-FIFO** (лучше, чем uinput):
+      Android в Waydroid читает ввод из FIFO `/dev/input/wl_touch_events`,
+      `wl_keyboard_events`, `wl_pointer_events` (патч EventHub). Пишем
+      `struct input_event` напрямую → событие попадает в EventHub минуя
+      scrcpy-server и Java-инжектор; полноценный мультитач (10 слотов),
+      задержка ниже. Автоматический откат на control-сокет scrcpy.
 - [ ] **Инерционный обзор** (мышь как тачпад): захват указателя, сглаживание,
       чувствительность на виджет.
 - [ ] Собственный Wayland-композитор сессии (в духе cage) для фуллскрина

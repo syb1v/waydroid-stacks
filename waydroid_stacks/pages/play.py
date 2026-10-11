@@ -1,6 +1,7 @@
 """Окно игры: встроенный видеопоток Android + инъекция ввода (кеймаппинг)."""
 from __future__ import annotations
 
+import threading
 import time
 from datetime import datetime
 
@@ -15,6 +16,7 @@ from ..core import config  # noqa: E402
 from ..core.gamepad import InputMapper  # noqa: E402
 from ..core.gamepad_device import GamepadManager, HAS_EVDEV  # noqa: E402
 from ..core.keymap import Profile  # noqa: E402
+from ..core.nativeinput import WaydroidNativeInput  # noqa: E402
 from ..core.scrcpy import ScrcpySession, ScrcpyError  # noqa: E402
 from ..core.video import VideoStream  # noqa: E402
 
@@ -36,12 +38,15 @@ class PlayWindow(Adw.Window):
         self.set_default_size(1100, 700)
 
         self.session: ScrcpySession | None = None
+        self.native_input: WaydroidNativeInput | None = None
         self.mapper: InputMapper | None = None
         self.video = VideoStream()
         self.gamepad: GamepadManager | None = None
         self._last_mouse = (0.0, 0.0)
         self._ptr_buttons = set()
         self._starting = False
+        self._stayon_prev: str | None = None
+        self._last_freeze_check = 0.0
 
         self._build_ui()
         self._start()
@@ -157,6 +162,12 @@ class PlayWindow(Adw.Window):
         self.set_content(self.overlay)
 
     # ------------------------------------------------------------------ start
+    def _input(self):
+        """Активный бэкенд ввода: нативный FIFO, иначе control-сокет scrcpy."""
+        if self.native_input and self.native_input.available:
+            return self.native_input
+        return self.session
+
     def _start(self) -> None:
         if self._starting:
             return
@@ -171,6 +182,17 @@ class PlayWindow(Adw.Window):
                 if not adb.wait_boot(60):
                     raise ScrcpyError("Android не загружен")
                 parent = self.parent_window
+                # не даём Android уснуть: засыпание вызывает HAL suspend →
+                # контейнер замораживается (suspend_action=freeze)
+                try:
+                    self._stayon_prev = adb.shell_text(
+                        "settings get global stay_on_while_plugged_in",
+                        timeout=10).strip()
+                    adb.shell(
+                        "settings put global stay_on_while_plugged_in 7",
+                        timeout=10)
+                except Exception:  # noqa: BLE001
+                    self._stayon_prev = None
                 # приоритет: настройки профиля игры, затем глобальные
                 # (0 = взять глобальные, -1 = без ограничения)
                 psize = int(self.profile.stream_max_size or 0)
@@ -201,7 +223,17 @@ class PlayWindow(Adw.Window):
                         _time.sleep(2)
                 if last_exc:
                     raise last_exc
-                self.mapper = InputMapper(self.session, self.profile)
+                # нативный ввод (evdev-FIFO → EventHub) без control-сокета;
+                # при недоступности — прозрачный откат на scrcpy-control
+                try:
+                    native = WaydroidNativeInput(adb)
+                    if native.start():
+                        self.native_input = native
+                    else:
+                        native.stop()
+                except Exception:  # noqa: BLE001
+                    self.native_input = None
+                self.mapper = InputMapper(self._input(), self.profile)
                 GLib.idle_add(self._on_ready)
             except Exception as exc:  # noqa: BLE001
                 GLib.idle_add(self._on_error, str(exc))
@@ -215,6 +247,9 @@ class PlayWindow(Adw.Window):
         self.status.set_text("Переподключение...")
         if self.mapper:
             self.mapper.reset()
+        if self.native_input:
+            self.native_input.stop()
+            self.native_input = None
         if self.session:
             self.session.stop()
             self.session = None
@@ -225,7 +260,12 @@ class PlayWindow(Adw.Window):
     def _on_ready(self) -> None:
         self._starting = False
         self.video.attach(self.session)
-        status = "Кеймаппинг активен" if self.use_keymap else "Клики мыши — тапы"
+        if self.use_keymap:
+            backend = "нативный ввод (evdev-FIFO)" if self.native_input \
+                else "ввод через scrcpy"
+            status = f"Кеймаппинг активен · {backend}"
+        else:
+            status = "Клики мыши — тапы"
         if self.gamepad and self.gamepad.connected:
             status += f" · геймпад: {self.gamepad.connected[0]}"
         self.status.set_text(status)
@@ -346,7 +386,7 @@ class PlayWindow(Adw.Window):
             elif "0" <= ch <= "9":
                 code = ord(ch) - ord("0") + 7
         if code:
-            self.session.key(0 if down else 1, code)
+            self._input().key(0 if down else 1, code)
 
     # ----------------------------------------------------------------- mouse
     def _on_motion(self, controller, x, y) -> None:
@@ -375,9 +415,10 @@ class PlayWindow(Adw.Window):
         if self.use_keymap and self.mapper:
             self.mapper.mouse_button(name, False)
 
-    def _tap_at(self, x, y) -> None:
+    def _normalized(self, x, y) -> tuple[float, float] | None:
+        """Координаты виджета видео → нормализованные (0..1)."""
         if not self.session:
-            return
+            return None
         alloc = self.video.picture.get_allocation()
         vw, vh = self.session.video_size
         scale = min(alloc.width / vw, alloc.height / vh) if vw and vh else 1.0
@@ -386,23 +427,35 @@ class PlayWindow(Adw.Window):
         nx = (x - off_x) / dw
         ny = (y - off_y) / dh
         if not (0 <= nx <= 1 and 0 <= ny <= 1):
+            return None
+        return nx, ny
+
+    def _tap_at(self, x, y) -> None:
+        nxny = self._normalized(x, y)
+        if not nxny:
             return
+        nx, ny = nxny
+        backend = self._input()
+        iw, ih = backend.input_size
         pid = 100
-        self.session.touch(0, int(nx * (vw - 1)), int(ny * (vh - 1)), pid)
-        self.session.touch(1, int(nx * (vw - 1)), int(ny * (vh - 1)), pid)
+        backend.touch(0, int(nx * (iw - 1)), int(ny * (ih - 1)), pid)
+        backend.touch(1, int(nx * (iw - 1)), int(ny * (ih - 1)), pid)
 
     def _on_scroll(self, controller, dx, dy) -> bool:
-        if self.session:
-            x = int(self._last_mouse[0])
-            y = int(self._last_mouse[1])
-            self.session.scroll(x, y, dx, -dy)
+        nxny = self._normalized(*self._last_mouse)
+        if nxny:
+            backend = self._input()
+            iw, ih = backend.input_size
+            backend.scroll(int(nxny[0] * (iw - 1)), int(nxny[1] * (ih - 1)),
+                           dx, -dy)
         return True
 
     # --------------------------------------------------------------- helpers
     def _key_event(self, code: int) -> None:
-        if self.session:
-            self.session.key(0, code)
-            self.session.key(1, code)
+        backend = self._input()
+        if backend:
+            backend.key(0, code)
+            backend.key(1, code)
 
     def _home(self) -> None:
         if self.session:
@@ -417,7 +470,30 @@ class PlayWindow(Adw.Window):
     def _tick(self) -> bool:
         if self.mapper:
             self.mapper.tick()
+        now = time.monotonic()
+        if now - self._last_freeze_check >= 5.0:
+            self._last_freeze_check = now
+            self._check_frozen()
         return True
+
+    def _check_frozen(self) -> None:
+        """Watchdog: если Android всё же уснул и контейнер заморожен —
+        размораживаем, чтобы ввод продолжал работать."""
+        def work():
+            try:
+                st = self.parent_window.waydroid.status()
+                if st.container.upper() == "FROZEN":
+                    self.parent_window.waydroid.unfreeze()
+                    adb = self.parent_window.adb
+                    adb.connect()
+                    if self.native_input:
+                        self.native_input.reensure()
+                    GLib.idle_add(self.parent_window.toast,
+                                  "Контейнер разморожен")
+            except Exception:  # noqa: BLE001
+                pass
+
+        threading.Thread(target=work, daemon=True).start()
 
     # ------------------------------------------------------------- capture
     def take_screenshot(self) -> None:
@@ -475,8 +551,20 @@ class PlayWindow(Adw.Window):
             self.gamepad = None
         if self.mapper:
             self.mapper.reset()
+        if self.native_input:
+            self.native_input.stop()
+            self.native_input = None
         if self.session:
             self.session.stop()
+        if self._stayon_prev is not None:
+            def restore():
+                try:
+                    self.parent_window.adb.shell(
+                        f"settings put global stay_on_while_plugged_in "
+                        f"{self._stayon_prev}", timeout=10)
+                except Exception:  # noqa: BLE001
+                    pass
+            threading.Thread(target=restore, daemon=True).start()
         self.video.stop(wait=True)
         self.parent_window.unregister_play_window(self.package)
         super().close()
