@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Waydroid Stacks
+GenericName=Android Games Launcher
+Comment=BlueStacks-подобный интерфейс для Waydroid: библиотека приложений, встроенный игровой режим, кеймаппер
+Exec=waydroid-stacks
+Icon=io.github.syb1v.WaydroidStacks
+Terminal=false
+Categories=Game;Emulator;
+Keywords=Waydroid;Android;Games;Emulator;BlueStacks;
+StartupNotify=true

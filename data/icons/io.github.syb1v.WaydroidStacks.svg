@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c2733"/>
+      <stop offset="1" stop-color="#0e1217"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4fc3f7"/>
+      <stop offset="1" stop-color="#7c4dff"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="48" fill="url(#bg)"/>
+  <!-- stacked layers -->
+  <rect x="56" y="72" width="144" height="24" rx="12" fill="url(#accent)" opacity="0.35"/>
+  <rect x="56" y="108" width="144" height="24" rx="12" fill="url(#accent)" opacity="0.65"/>
+  <rect x="56" y="144" width="144" height="24" rx="12" fill="url(#accent)"/>
+  <!-- android head -->
+  <circle cx="128" cy="106" r="52" fill="none" stroke="#ffffff" stroke-width="6" opacity="0.15"/>
+  <path d="M92 92 q36 -40 72 0" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" opacity="0.5"/>
+  <circle cx="108" cy="100" r="5" fill="#ffffff" opacity="0.8"/>
+  <circle cx="148" cy="100" r="5" fill="#ffffff" opacity="0.8"/>
+  <path d="M108 52 l-10 -14" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity="0.6"/>
+  <path d="M148 52 l10 -14" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity="0.6"/>
+</svg>
