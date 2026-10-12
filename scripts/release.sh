@@ -35,7 +35,7 @@ PY
 cd "$ROOT"
 git add -A
 git -c user.name="$(git config user.name || echo syb1v)" \
-    -c user.email="$(git config user.email || echo Sokolovsky08@gmail.com)" \
+    -c user.email="$(git config user.email || echo 108201690+syb1v@users.noreply.github.com)" \
     commit -m "release: v$VERSION"
 git tag -a "v$VERSION" -m "Waydroid Stacks v$VERSION"
 
