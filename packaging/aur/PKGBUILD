@@ -1,0 +1,42 @@
+# Maintainer: syb1v <https://github.com/syb1v>
+pkgname=waydroid-stacks
+pkgver=0.3.0
+pkgrel=1
+pkgdesc="BlueStacks-подобная оболочка для Waydroid: библиотека приложений, игровой режим, кеймаппер"
+arch=('any')
+url="https://github.com/syb1v/waydroid-stacks"
+license=('GPL-3.0-or-later')
+depends=('python>=3.10' 'python-gobject' 'gtk4' 'libadwaita' 'gst-python'
+         'gst-plugins-base' 'gst-plugins-good' 'android-tools')
+optdepends=('python-pyaxmlparser: настоящие иконки и названия приложений'
+            'gst-plugins-bad: VA-API декодер vah264dec'
+            'gst-plugin-va: аппаратное декодирование VA-API'
+            'waydroid: системная Android-среда (AUR)'
+            'waydroid-image: системный образ Android (AUR)')
+provides=()
+conflicts=()
+source=("$pkgname-$pkgver.tar.gz::https://github.com/syb1v/waydroid-stacks/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+    local datadir="$pkgdir/usr/share/waydroid-stacks"
+
+    install -d "$datadir"
+    cp -a "$srcdir/$pkgname-$pkgver/waydroid_stacks" "$datadir/"
+    cp -a "$srcdir/$pkgname-$pkgver/third_party" "$datadir/"
+    find "$datadir" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
+
+    install -Dm755 /dev/stdin "$pkgdir/usr/bin/waydroid-stacks" <<'EOF'
+#!/bin/sh
+DATADIR="/usr/share/waydroid-stacks"
+export PYTHONPATH="$DATADIR${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m waydroid_stacks "$@"
+EOF
+
+    install -Dm644 "$srcdir/$pkgname-$pkgver/data/io.github.syb1v.WaydroidStacks.desktop" \
+        "$pkgdir/usr/share/applications/io.github.syb1v.WaydroidStacks.desktop"
+    install -Dm644 "$srcdir/$pkgname-$pkgver/data/icons/io.github.syb1v.WaydroidStacks.svg" \
+        "$pkgdir/usr/share/icons/hicolor/scalable/apps/io.github.syb1v.WaydroidStacks.svg"
+    install -Dm644 "$srcdir/$pkgname-$pkgver/LICENSE" \
+        "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

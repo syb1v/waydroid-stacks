@@ -1,0 +1,71 @@
+# Рецепт appimage-builder для автономного AppImage Waydroid Stacks.
+# Сборка: packaging/appimage/build.sh
+version: 1
+
+script:
+  - rm -rf AppDir | true
+  - mkdir -p AppDir/usr/share/waydroid-stacks
+  - cp -r "$SOURCE_DIR/waydroid_stacks" AppDir/usr/share/waydroid-stacks/
+  - cp -r "$SOURCE_DIR/third_party" AppDir/usr/share/waydroid-stacks/
+  - find AppDir/usr/share/waydroid-stacks -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
+  - mkdir -p AppDir/usr/bin
+  - cp "$SOURCE_DIR/packaging/appimage/waydroid-stacks" AppDir/usr/bin/waydroid-stacks
+  - chmod 755 AppDir/usr/bin/waydroid-stacks
+  - mkdir -p AppDir/usr/share/icons/hicolor/scalable/apps
+  - cp "$SOURCE_DIR/data/icons/io.github.syb1v.WaydroidStacks.svg" AppDir/usr/share/icons/hicolor/scalable/apps/
+
+AppDir:
+  path: ./AppDir
+
+  app_info:
+    id: io.github.syb1v.WaydroidStacks
+    name: waydroid-stacks
+    icon: io.github.syb1v.WaydroidStacks
+    version: "@VERSION@"
+    exec: usr/bin/python3
+    exec_args: "-m waydroid_stacks $@"
+
+  apt:
+    arch: amd64
+    sources:
+      - sourceline: 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ noble main universe'
+        key_url: 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C'
+    include:
+      - python3
+      - python3-gi
+      - gir1.2-gtk-4.0
+      - gir1.2-adw-1
+      - python3-gst-1.0
+      - gstreamer1.0-plugins-base
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-plugins-bad
+      - gstreamer1.0-libav
+      - adwaita-icon-theme
+      - fonts-dejavu-core
+      - libglib2.0-0t64
+    exclude:
+      - usr/share/doc
+      - usr/share/man
+      - usr/share/locale
+      - usr/share/icons/Adwaita/16x16
+      - usr/share/icons/Adwaita/22x22
+      - usr/share/icons/Adwaita/24x24
+      - usr/share/icons/Adwaita/32x32
+      - usr/share/icons/Adwaita/48x48
+      - usr/share/icons/Adwaita/64x64
+      - usr/share/icons/Adwaita/96x96
+      - usr/share/icons/Adwaita/256x256
+      - usr/share/icons/Adwaita/512x512
+
+  runtime:
+    env:
+      PYTHONPATH: $APPDIR/usr/share/waydroid-stacks:$APPDIR/usr/lib/python3/dist-packages
+      PYTHONDONTWRITEBYTECODE: "1"
+      GI_TYPELIB_PATH: $APPDIR/usr/lib/x86_64-linux-gnu/girepository-1.0
+      GDK_BACKEND: "wayland,x11"
+
+AppImage:
+  arch: x86_64
+  file_name: "waydroid-stacks-@VERSION@-x86_64.AppImage"
+  update-information: None
+  sign-key: None

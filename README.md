@@ -71,13 +71,62 @@ Waydroid Stacks — **первое и единственное** приложе�
 
 ## Установка
 
+### Универсально, одной командой (без root)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/syb1v/waydroid-stacks/master/scripts/install.sh | bash
+```
+
+Скрипт сам скачает свежий релиз, создаст окружение в `~/.local` и добавит
+ярлык в меню приложений. Ярлык на рабочем столе:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/syb1v/waydroid-stacks/master/scripts/install.sh | bash -s -- --desktop-shortcut
+```
+
+### Arch Linux / Manjaro (AUR)
+
+```bash
+yay -S waydroid-stacks      # или paru
+```
+
+### Debian / Ubuntu / Mint (.deb)
+
+1. Скачайте `waydroid-stacks_X.Y.Z_all.deb` со страницы
+   [Releases](https://github.com/syb1v/waydroid-stacks/releases).
+2. Установите:
+
+```bash
+sudo apt install ./waydroid-stacks_*.deb
+```
+
+### Fedora / openSUSE (.rpm)
+
+1. Скачайте `waydroid-stacks-X.Y.Z-1.*.noarch.rpm` со страницы Releases.
+2. Установите:
+
+```bash
+sudo dnf install ./waydroid-stacks-*.noarch.rpm   # Fedora
+sudo zypper install ./waydroid-stacks-*.noarch.rpm # openSUSE
+```
+
+### AppImage (любой дистрибутив, без установки)
+
+```bash
+chmod +x waydroid-stacks-*.AppImage
+./waydroid-stacks-*.AppImage
+```
+
+AppImage содержит Python, GTK4 и GStreamer внутри; системными должны быть
+только `waydroid` и `adb`.
+
+### Из исходников
+
 ```bash
 git clone https://github.com/syb1v/waydroid-stacks.git
 cd waydroid-stacks
 ./scripts/install.sh
 ```
-
-Запуск: `waydroid-stacks` или из меню приложений.
 
 ## Быстрый старт
 
@@ -98,12 +147,12 @@ cd waydroid-stacks
 | `F11` | полный экран |
 | `Esc` | закрыть игровое окно |
 | мышь | в режиме маппинга — обзор/прицеливание (виджет «Обзор») |
+| ЛКМ/ПКМ | назначаются как клавиши `mouse1`, `mouse2` |
+| геймпад | кнопки и стики как `pad:a`, `pad:up`, `pad:ls_right` и т.д. |
 
 Когда в игре активно текстовое поле (ввод имени, чат), клавиатура автоматически
 переключается в текстовый режим: печатайте прямо с физической клавиатуры —
 экранная клавиатура Android при этом не появляется.
-| ЛКМ/ПКМ | назначаются как клавиши `mouse1`, `mouse2` |
-| геймпад | кнопки и стики как `pad:a`, `pad:up`, `pad:ls_right` и т.д. |
 
 ## Геймпады
 
@@ -214,6 +263,45 @@ third_party/wdsime.apk      # собранная тихая IME (см. scripts/b
   иначе используется программный `avdec_h264`.
 - **Чёрный экран в игровом режиме**: убедитесь, что сессия Waydroid запущена
   (`waydroid status`), и обновите Android до свежего состояния.
+
+## Релизы и CI
+
+Все пакеты собираются и публикуются автоматически в **GitHub Actions**
+(`.github/workflows/release.yml`) при пуше тега `vX.Y.Z`:
+
+| Артефакт | Как собирается |
+|---|---|
+| `waydroid-stacks-X.Y.Z.tar.gz` | исходники (git archive) |
+| `waydroid-stacks_X.Y.Z_all.deb` | нативный `dpkg-deb` на Ubuntu 24.04 |
+| `waydroid-stacks-X.Y.Z-1.noarch.rpm` | `rpmbuild` на Ubuntu 24.04 |
+| `waydroid-stacks-X.Y.Z-x86_64.AppImage` | `appimage-builder` (Ubuntu 24.04) |
+| AUR `waydroid-stacks` | PKGBUILD + `.SRCINFO`, push в AUR |
+
+Проверить сборку без публикации: **Actions → Release → Run workflow**
+с `tag: master` и включённым `dry_run`. После успешной проверки выпуск:
+
+```bash
+./scripts/release.sh 0.3.1 "краткое описание"
+git push --follow-tags
+```
+
+### Публикация в AUR (одноразовая настройка)
+
+1. Создайте SSH-ключ и добавьте **публичный** ключ в профиль
+   [aur.archlinux.org](https://aur.archlinux.org/account/):
+   ```bash
+   ssh-keygen -f ~/.ssh/aur -N ""
+   cat ~/.ssh/aur.pub   # вставить на сайте AUR
+   ```
+2. Добавьте **приватный** ключ в секреты GitHub-репозитория
+   (Settings → Secrets and variables → Actions):
+   - `AUR_SSH_PRIVATE_KEY` — содержимое `~/.ssh/aur` (обязательно);
+   - `AUR_USERNAME`, `AUR_EMAIL` — для коммитов AUR (опционально).
+3. При первом пуше CI создаст AUR-пакет (пустой репозиторий создаётся
+   автоматически при клонировании по SSH).
+
+Пока секрет не задан, шаг AUR пропускается с предупреждением — остальные
+пакеты публикуются как обычно.
 
 ## Лицензия
 

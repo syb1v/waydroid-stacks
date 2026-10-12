@@ -10,3 +10,4 @@ frame.ppm
 
 # сборка тихой IME
 ime/build/
+*.tar.gz

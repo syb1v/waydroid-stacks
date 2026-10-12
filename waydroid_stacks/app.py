@@ -38,6 +38,7 @@ class WaydroidStacksApp(Adw.Application):
 
     def do_activate(self) -> None:  # noqa: N802
         _load_css()
+        Gtk.Window.set_default_icon_name(APP_ID)
         if self.settings.get("theme") == "dark":
             Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.PREFER_DARK)
         win = self.get_active_window()

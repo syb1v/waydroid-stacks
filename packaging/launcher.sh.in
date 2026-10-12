@@ -1,0 +1,6 @@
+#!/bin/sh
+# Запуск Waydroid Stacks при системной установке (deb/rpm/AUR).
+# @DATADIR@ заменяется на каталог данных при сборке пакета.
+DATADIR="@DATADIR@"
+export PYTHONPATH="$DATADIR${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m waydroid_stacks "$@"

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Лончер для AppImage: $APPDIR указывает на корень образа.
+DATADIR="$APPDIR/usr/share/waydroid-stacks"
+export PYTHONPATH="$DATADIR${PYTHONPATH:+:$PYTHONPATH}"
+# системные adb/waydroid остаются внешними зависимостями
+exec "$APPDIR/usr/bin/python3" -m waydroid_stacks "$@"
