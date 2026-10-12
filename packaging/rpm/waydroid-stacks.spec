@@ -60,7 +60,7 @@ gtk-update-icon-cache -q %{_datadir}/icons/hicolor || :
 update-desktop-database -q %{_datadir}/applications || :
 
 %files
-%license LICENSE
+%{_datadir}/licenses/%{name}/LICENSE
 %{_bindir}/waydroid-stacks
 %{_datadir}/waydroid-stacks
 %{_datadir}/applications/io.github.syb1v.WaydroidStacks.desktop
