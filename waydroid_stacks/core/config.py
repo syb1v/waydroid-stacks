@@ -22,8 +22,35 @@ APK_CACHE_DIR = CACHE_DIR / "apks"
 SHOT_DIR = CACHE_DIR / "shots"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-BUNDLED_SCRCPY_SERVER = PROJECT_ROOT / "third_party" / "scrcpy-server"
-BUNDLED_IME_APK = PROJECT_ROOT / "third_party" / "wdsime.apk"
+
+
+def _find_asset(name: str) -> Path:
+    """Путь к встроенному файлу из ``third_party/``.
+
+    Ищет по всем способам установки: исходники (PROJECT_ROOT),
+    venv/data-каталог пользователя (``~/.local/share/waydroid-stacks``),
+    системные ``XDG_DATA_DIRS`` (``/usr/share/waydroid-stacks`` у deb/rpm),
+    а также каталог из ``WAYDROID_STACKS_ROOT`` (переопределение).
+    """
+    rel = Path("third_party") / name
+    candidates: list[Path] = []
+    env_root = os.environ.get("WAYDROID_STACKS_ROOT")
+    if env_root:
+        candidates.append(Path(env_root) / "third_party")
+    candidates.append(PROJECT_ROOT / "third_party")
+    data_dirs = os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
+    for base in [*data_dirs.split(":"), str(XDG_DATA)]:
+        if base:
+            candidates.append(Path(base) / "waydroid-stacks" / "third_party")
+    for candidate in candidates:
+        asset = candidate / name
+        if asset.is_file():
+            return asset
+    return PROJECT_ROOT / "third_party" / name
+
+
+BUNDLED_SCRCPY_SERVER = _find_asset("scrcpy-server")
+BUNDLED_IME_APK = _find_asset("wdsime.apk")
 SCRCPY_VERSION = "3.3.1"
 
 DEFAULT_ADB_SERIAL = "192.168.240.112:5555"
@@ -42,6 +69,7 @@ DEFAULTS = {
     "theme": "dark",
     "show_system_apps": False,
     "start_session_on_launch": True,
+    "fit_display": True,
 }
 
 

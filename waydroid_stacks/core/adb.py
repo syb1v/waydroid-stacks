@@ -157,12 +157,34 @@ class Adb:
                 return line.removeprefix("package:").strip()
         return None
 
+    def resolve_launcher_activity(self, package: str) -> str:
+        """Launcher-активность пакета ("pkg/.Activity"); "" — не нашлась."""
+        try:
+            out = self.shell_text(
+                f"cmd package resolve-activity --brief {package}", timeout=25)
+        except AdbError:
+            return ""
+        for line in reversed(out.splitlines()):
+            line = line.strip()
+            if "/" in line and " " not in line:
+                return line
+        return ""
+
     def launch_app(self, package: str, activity: str | None = None) -> None:
+        # Явная активность надёжнее monkey: некоторые игры (например,
+        # BLACK RUSSIA) через monkey не стартуют вовсе.
+        if not activity:
+            activity = self.resolve_launcher_activity(package)
         if activity:
-            comp = f"{package}/{activity}"
-            self.shell(f"am start -n {comp}")
+            comp = activity if "/" in activity else f"{package}/{activity}"
+            self.shell(f"am start -W -n {comp}", timeout=60)
         else:
             self.shell(f"monkey -p {package} -c android.intent.category.LAUNCHER 1")
+        # HWC в одноконочном режиме показывает окно активного приложения
+        try:
+            self.shell(f"setprop waydroid.active_apps {package}", timeout=15)
+        except AdbError:
+            pass
 
     def stop_app(self, package: str) -> None:
         self.shell(f"am force-stop {package}")

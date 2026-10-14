@@ -106,6 +106,13 @@ python3 -m venv --system-site-packages "$VENV"
 "$VENV/bin/pip" install --quiet --upgrade pip
 "$VENV/bin/pip" install --quiet "$ROOT"
 
+# third_party (scrcpy-server, IME) не попадает в pip-пакет — копируем рядом
+msg "Данные приложения (scrcpy-server, IME)"
+ASSET_DIR="$HOME/.local/share/waydroid-stacks/third_party"
+mkdir -p "$ASSET_DIR"
+cp -f "$ROOT/third_party/scrcpy-server" "$ASSET_DIR/"
+cp -f "$ROOT/third_party/wdsime.apk" "$ASSET_DIR/"
+
 # --- обёртка запуска ---------------------------------------------------------
 msg "Обёртка запуска: $PREFIX/bin/waydroid-stacks"
 mkdir -p "$PREFIX/bin"

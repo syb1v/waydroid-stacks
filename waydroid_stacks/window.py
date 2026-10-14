@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 import gi
 
@@ -120,6 +121,65 @@ class MainWindow(Adw.ApplicationWindow):
             self.stack.set_visible_child_name(self._nav_names[idx])
 
     # ------------------------------------------------------------ operations
+    # ------------------------------------------------------- разрешение Android
+    def _monitor_size(self) -> tuple[int, int]:
+        """Разрешение монитора окна в физических пикселях (0, 0 при ошибке)."""
+        try:
+            display = self.get_display()
+            surface = self.get_surface()
+            monitor = display.get_monitor_at_surface(surface) if surface else None
+            if monitor is None:
+                monitors = display.get_monitors()
+                monitor = monitors.get_item(0) if monitors.get_n_items() else None
+            if monitor is None:
+                return 0, 0
+            geometry = monitor.get_geometry()
+            scale = monitor.get_scale_factor() or 1
+            return geometry.width * scale, geometry.height * scale
+        except Exception:  # noqa: BLE001
+            return 0, 0
+
+    def fit_display_resolution(self) -> None:
+        """Подгоняет виртуальный дисплей Android под монитор.
+
+        `persist.waydroid.width/height` читаются при старте сеанса, поэтому
+        при расхождении сеанс аккуратно перезапускается (однократно).
+        """
+        if not self.settings.get("fit_display", True):
+            return
+        width, height = self._monitor_size()
+        if width < 640 or height < 480:
+            return
+        adb = self.adb
+        try:
+            cur_w = int((adb.shell_text("getprop persist.waydroid.width",
+                                        timeout=10) or "0").strip() or 0)
+            cur_h = int((adb.shell_text("getprop persist.waydroid.height",
+                                        timeout=10) or "0").strip() or 0)
+        except (AdbError, ValueError):
+            return
+        if (cur_w, cur_h) == (width, height):
+            return
+        try:
+            adb.shell(f"setprop persist.waydroid.width {width}", timeout=10)
+            adb.shell(f"setprop persist.waydroid.height {height}", timeout=10)
+        except AdbError:
+            return
+        GLib.idle_add(self.toast,
+                      f"Разрешение Android: {width}×{height} — перезапускаю сеанс")
+        self.waydroid.session_stop()
+        for _ in range(30):
+            if not self.waydroid.status().session_running:
+                break
+            time.sleep(1)
+        time.sleep(2)
+        self.waydroid.session_start()
+        try:
+            adb.connect()
+            adb.wait_boot(150)
+        except AdbError:
+            pass
+
     def ensure_ready(self, callback=None) -> None:
         """Запускает сессию Waydroid и adb-соединение в фоне."""
         def work():
@@ -132,6 +192,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self.adb.connect()
                 if not self.adb.wait_boot(90):
                     raise AdbError("Android не загрузился за 90 секунд")
+                self.fit_display_resolution()
                 if callback:
                     GLib.idle_add(callback)
             except AdbError as exc:
