@@ -27,6 +27,9 @@ IME_ID = f"{IME_PKG}/.WdsIme"
 ACTION_B64 = f"{IME_PKG}.INPUT_B64"
 ACTION_CODE = f"{IME_PKG}.INPUT_CODE"
 
+#: Прежняя системная IME (для возврата, если приложение оборвалось).
+_PREV_FILE = config.CONFIG_DIR / "ime_previous"
+
 
 class ImeBridge:
     """Жизненный цикл тихой IME и очередь отправки текста/клавиш."""
@@ -55,6 +58,11 @@ class ImeBridge:
                 self.adb.install_apk(str(apk))
             self._prev_ime = self.adb.shell_text(
                 "settings get secure default_input_method", timeout=10).strip()
+            try:
+                config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                _PREV_FILE.write_text(self._prev_ime or "", encoding="utf-8")
+            except OSError:
+                pass
             self.adb.shell(f"ime enable {IME_ID}", timeout=10)
             self.adb.shell(f"ime set {IME_ID}", timeout=10)
         except AdbError:
@@ -81,8 +89,43 @@ class ImeBridge:
                     timeout=10).strip()
                 if current == IME_ID:
                     self.adb.shell(f"ime set {self._prev_ime}", timeout=10)
+                try:
+                    _PREV_FILE.unlink(missing_ok=True)
+                except OSError:
+                    pass
             except AdbError:
                 pass
+        else:
+            try:
+                _PREV_FILE.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    @staticmethod
+    def restore_stale(adb: Adb) -> bool:
+        """Оборванный сеанс оставил нашу IME по умолчанию? Вернуть прежнюю."""
+        try:
+            previous = _PREV_FILE.read_text(encoding="utf-8").strip()
+        except OSError:
+            return False
+        if not previous or previous == IME_ID:
+            return False
+        try:
+            current = adb.shell_text(
+                "settings get secure default_input_method", timeout=10).strip()
+        except AdbError:
+            return False
+        if current != IME_ID:
+            return False
+        try:
+            adb.shell(f"ime set {previous}", timeout=10)
+        except AdbError:
+            return False
+        try:
+            _PREV_FILE.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return True
 
     # -------------------------------------------------------------- send API
     def queue_text(self, text: str) -> None:

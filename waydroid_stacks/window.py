@@ -16,6 +16,7 @@ from .core.adb import Adb, AdbError  # noqa: E402
 from .core.packages import AppCatalog  # noqa: E402
 from .core.waydroid import Waydroid  # noqa: E402
 from .core.keymap import ProfileStore  # noqa: E402
+from .core.imebridge import ImeBridge  # noqa: E402
 
 
 class MainWindow(Adw.ApplicationWindow):
@@ -193,6 +194,7 @@ class MainWindow(Adw.ApplicationWindow):
                 if not self.adb.wait_boot(90):
                     raise AdbError("Android не загрузился за 90 секунд")
                 self.fit_display_resolution()
+                ImeBridge.restore_stale(self.adb)
                 if callback:
                     GLib.idle_add(callback)
             except AdbError as exc:

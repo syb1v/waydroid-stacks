@@ -51,12 +51,12 @@ with zipfile.ZipFile(apk, "a", zipfile.ZIP_DEFLATED) as z:
 PY
 "$BT/zipalign" -f 4 "$BUILD/unsigned.apk" "$BUILD/aligned.apk"
 
-KS="$BUILD/debug.keystore"
+KS="$ROOT/ime/keystore.jks"
 if [ ! -f "$KS" ]; then
     keytool -genkeypair -v -keystore "$KS" -alias androiddebugkey \
         -storepass android -keypass android \
         -keyalg RSA -keysize 2048 -validity 10000 \
-        -dname "CN=Android Debug,O=Android,C=US"
+        -dname "CN=Waydroid Stacks IME,O=Waydroid Stacks,C=RU"
 fi
 
 "$BT/apksigner" sign \

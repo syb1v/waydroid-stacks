@@ -11,3 +11,5 @@ frame.ppm
 # сборка тихой IME
 ime/build/
 *.tar.gz
+ime/keystore.jks
+*.apk.idsig
