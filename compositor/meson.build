@@ -1,0 +1,108 @@
+project('cage', 'c',
+  version: '0.3.1',
+  license: 'MIT',
+  meson_version: '>=0.58.1',
+  default_options: [
+    'c_std=c11',
+    'warning_level=2',
+    'werror=true',
+  ],
+)
+
+add_project_arguments(
+  [
+    '-DWLR_USE_UNSTABLE',
+    '-Wundef',
+    '-Wno-unused-parameter',
+  ],
+  language: 'c',
+)
+
+fs = import('fs')
+
+if get_option('buildtype').startswith('debug')
+  add_project_arguments('-DDEBUG', language : 'c')
+endif
+
+cc = meson.get_compiler('c')
+
+is_freebsd = host_machine.system().startswith('freebsd')
+if is_freebsd
+  add_project_arguments(
+    [
+      '-Wno-format-extra-args',
+      '-Wno-gnu-zero-variadic-macro-arguments',
+    ],
+    language: 'c'
+  )
+endif
+
+wlroots        = dependency('wlroots-0.20', fallback: ['wlroots', 'wlroots'])
+wayland_server = dependency('wayland-server')
+xkbcommon      = dependency('xkbcommon')
+math           = cc.find_library('m')
+
+have_xwayland = wlroots.get_variable(pkgconfig: 'have_xwayland', internal: 'have_xwayland') == 'true'
+
+version = '@0@'.format(meson.project_version())
+if fs.is_dir('.git')
+  git = find_program('git', native: true, required: false)
+  if git.found()
+    git_commit = run_command([git, 'rev-parse', '--short', 'HEAD'], check: false)
+    git_branch = run_command([git, 'rev-parse', '--abbrev-ref', 'HEAD'], check: false)
+    if git_commit.returncode() == 0 and git_branch.returncode() == 0
+      version = '@0@-@1@ (branch \'@2@\')'.format(
+        meson.project_version(),
+        git_commit.stdout().strip(),
+        git_branch.stdout().strip(),
+      )
+    endif
+  endif
+endif
+
+conf_data = configuration_data()
+conf_data.set10('CAGE_HAS_XWAYLAND', have_xwayland)
+conf_data.set_quoted('CAGE_VERSION', version)
+
+scdoc = dependency('scdoc', version: '>=1.9.2', native: true, required: false)
+if scdoc.found() and get_option('man-pages')
+  # Waydroid Stacks: man-страницы upstream в форк не включены
+  message('scdoc найден, но man-страницы в форке отключены')
+endif
+
+cage_sources = [
+  'cage.c',
+  'idle_inhibit_v1.c',
+  'output.c',
+  'seat.c',
+  'view.c',
+  'xdg_shell.c',
+  configure_file(input: 'config.h.in',
+                 output: 'config.h',
+                 configuration: conf_data),
+]
+
+if conf_data.get('CAGE_HAS_XWAYLAND', 0) == 1
+  cage_sources += 'xwayland.c'
+endif
+
+executable(
+  'waydroid-stacks-session',
+  cage_sources,
+  dependencies: [
+    wayland_server,
+    wlroots,
+    xkbcommon,
+    math,
+  ],
+  install: true,
+)
+
+summary = [
+  '',
+  'Waydroid Stacks session (форк Cage @0@)'.format(version),
+  '',
+  '    xwayland: @0@'.format(have_xwayland),
+  ''
+]
+message('\n'.join(summary))
